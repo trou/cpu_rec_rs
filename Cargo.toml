@@ -1,0 +1,12 @@
+[package]
+name = "cpu_rec_rs"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.71"
+glob = "0.3.1"
+log = "0.4.19"
+simple_logger = "4.1.0"
