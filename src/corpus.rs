@@ -1,9 +1,13 @@
+use anyhow::{Context, Result, Ok, Error};
 use log::debug;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use glob::glob;
+use std::str::FromStr;
+use std::string::String;
 
 #[derive(Debug)]
 pub struct CorpusStats {
@@ -14,24 +18,45 @@ pub struct CorpusStats {
     tg_base_freq: f64,
 }
 
+pub fn load_corpus(path : &String) -> Result<Vec<CorpusStats>, Error> {
+    let corpus_entries = glob(path)
+        .with_context(|| "Could not find \"cpu_rec_corpus\" directory.")?
+        .map(|p| p.unwrap());
+
+    let res : Result<Vec<CorpusStats>, _> = corpus_entries
+        .map(|p| {
+            let arch_name =
+                String::from_str(p.file_name().unwrap().to_os_string().to_str().unwrap())
+                    .unwrap()
+                    .replace(".corpus", "");
+            let mut data = Vec::<u8>::new();
+            debug!("Loading {} for arch {}", p.display(), arch_name);
+            load_file(&p, &mut data)?;
+            Ok(CorpusStats::new(arch_name, &mut data, 0.01))
+        })
+        .collect();
+    res
+}
+
+pub fn load_file(file: &Path, data : &mut Vec<u8>) -> Result<(), Error> {
+    File::open(file).unwrap().read_to_end(data).with_context(|| "Could not read file")?;
+    Ok(())
+}
 impl CorpusStats {
-    pub fn new(arch: String, file: &Path, base_count: f64) -> Self {
+    pub fn new(arch: String, data: &Vec<u8>, base_count: f64) -> Self {
         let mut bg: HashMap<(u8, u8), f64> = HashMap::new();
         let mut tg = HashMap::new();
-        let mut buf = Vec::new();
-        debug!("Loading {} for arch {}", file.display(), arch);
-        File::open(file).unwrap().read_to_end(&mut buf).unwrap();
 
         /*
         Duplicate code to be able to use tuples, for optimization
         */
-        for w in buf.windows(2) {
+        for w in data.windows(2) {
             let b = (w[0], w[1]);
             bg.entry(b)
                 .and_modify(|count| *count += 1.0)
                 .or_insert(1.0 + base_count);
         }
-        for w in buf.windows(3) {
+        for w in data.windows(3) {
             let b = (w[0], w[1], w[2]);
             tg.entry(b)
                 .and_modify(|count| *count += 1.0)
@@ -40,7 +65,7 @@ impl CorpusStats {
         debug!(
             "{}: {} bytes, {} bigrams, {} trigrams",
             arch,
-            buf.len(),
+            data.len(),
             bg.len(),
             tg.len()
         );
