@@ -5,7 +5,6 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
-
 #[derive(Debug)]
 pub struct CorpusStats {
     pub arch: String,
@@ -63,17 +62,18 @@ impl CorpusStats {
             tg_base_freq: base_count / tri_qtotal,
         }
     }
+
     pub fn compute_kl(&self, q: &Self) -> (f64, f64) {
         let mut kld_bg = 0.0;
         for (bg, f) in &self.bigrams_freq {
             if *f != 0.0 {
-                kld_bg += f*((f/q.bigrams_freq.get(&bg).unwrap_or(&q.bg_base_freq))).ln();
+                kld_bg += f * (f / q.bigrams_freq.get(&bg).unwrap_or(&q.bg_base_freq)).ln();
             }
         }
         let mut kld_tg = 0.0;
         for (tg, f) in &self.trigrams_freq {
             if *f != 0.0 {
-                kld_tg += f*((f/q.trigrams_freq.get(&tg).unwrap_or(&q.tg_base_freq))).ln();
+                kld_tg += f * (f / q.trigrams_freq.get(&tg).unwrap_or(&q.tg_base_freq)).ln();
             }
         }
         (kld_bg, kld_tg)
