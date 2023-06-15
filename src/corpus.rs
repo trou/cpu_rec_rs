@@ -1,11 +1,11 @@
-use anyhow::{Context, Result, Ok, Error};
+use anyhow::{Context, Error, Ok, Result};
+use glob::glob;
 use log::debug;
 use std::collections::HashMap;
-use std::fmt::Debug;
+use std::fmt::{Debug};
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
-use glob::glob;
 use std::str::FromStr;
 use std::string::String;
 
@@ -18,12 +18,12 @@ pub struct CorpusStats {
     tg_base_freq: f64,
 }
 
-pub fn load_corpus(path : &String) -> Result<Vec<CorpusStats>, Error> {
+pub fn load_corpus(path: &str) -> Result<Vec<CorpusStats>, Error> {
     let corpus_entries = glob(path)
         .with_context(|| "Could not find \"cpu_rec_corpus\" directory.")?
         .map(|p| p.unwrap());
 
-    let res : Result<Vec<CorpusStats>, _> = corpus_entries
+    let res: Result<Vec<CorpusStats>, _> = corpus_entries
         .map(|p| {
             let arch_name =
                 String::from_str(p.file_name().unwrap().to_os_string().to_str().unwrap())
@@ -32,14 +32,17 @@ pub fn load_corpus(path : &String) -> Result<Vec<CorpusStats>, Error> {
             let mut data = Vec::<u8>::new();
             debug!("Loading {} for arch {}", p.display(), arch_name);
             load_file(&p, &mut data)?;
-            Ok(CorpusStats::new(arch_name, &mut data, 0.01))
+            Ok(CorpusStats::new(arch_name, &data, 0.01))
         })
         .collect();
     res
 }
 
-pub fn load_file(file: &Path, data : &mut Vec<u8>) -> Result<(), Error> {
-    File::open(file).unwrap().read_to_end(data).with_context(|| "Could not read file")?;
+pub fn load_file(file: &Path, data: &mut Vec<u8>) -> Result<(), Error> {
+    File::open(file)
+        .with_context(|| format!("Could not open {}", file.display()))?
+        .read_to_end(data)
+        .with_context(|| "Could not read file")?;
     Ok(())
 }
 impl CorpusStats {
@@ -92,13 +95,13 @@ impl CorpusStats {
         let mut kld_bg = 0.0;
         for (bg, f) in &self.bigrams_freq {
             if *f != 0.0 {
-                kld_bg += f * (f / q.bigrams_freq.get(&bg).unwrap_or(&q.bg_base_freq)).ln();
+                kld_bg += f * (f / q.bigrams_freq.get(bg).unwrap_or(&q.bg_base_freq)).ln();
             }
         }
         let mut kld_tg = 0.0;
         for (tg, f) in &self.trigrams_freq {
             if *f != 0.0 {
-                kld_tg += f * (f / q.trigrams_freq.get(&tg).unwrap_or(&q.tg_base_freq)).ln();
+                kld_tg += f * (f / q.trigrams_freq.get(tg).unwrap_or(&q.tg_base_freq)).ln();
             }
         }
         (kld_bg, kld_tg)
