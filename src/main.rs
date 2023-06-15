@@ -6,17 +6,17 @@ use log::{debug, info};
 use std::str::FromStr;
 use std::string::String;
 
-fn determine(r2: &[(String, f64)], r3: &[(String, f64)]) -> Option<String> {
+fn determine(r2: &[KlRes], r3: &[KlRes]) -> Option<String> {
     /* Bigrams and trigrams disagree or "special" invalid arch => no result */
-    if (r2[0].0 != r3[0].0) || r2[0].0.starts_with('_') {
+    if (r2[0].arch != r3[0].arch) || r2[0].arch.starts_with('_') {
         return None;
     }
-    let res = &r2[0].0;
+    let res = &r2[0].arch;
     /* Special heuristics */
-    if (res == "Ocaml" && r2[0].1 > 1.0) || (res == "IA-64" && r2[0].1 > 3.0) {
+    if (res == "Ocaml" && r2[0].div > 1.0) || (res == "IA-64" && r2[0].div > 3.0) {
         return None;
     }
-    return Some(r2[0].0.clone());
+    return Some(r2[0].arch.clone());
     /* TODO:
     elif res == 'PIC24':
             # PIC24 code has a 24-bit instruction set. In our corpus it is encoded in 32-bit words,
@@ -30,17 +30,24 @@ fn determine(r2: &[(String, f64)], r3: &[(String, f64)]) -> Option<String> {
      */
 }
 
+
+#[derive(Debug)]
+struct KlRes {
+    arch : String,
+    div : f64
+}
+
 fn predict(corpus_stats: &Vec<CorpusStats>, target: &CorpusStats) -> Result<Option<String>, Error> {
-    let mut results_m2 = Vec::<(String, f64)>::with_capacity(corpus_stats.len());
-    let mut results_m3 = Vec::<(String, f64)>::with_capacity(corpus_stats.len());
+    let mut results_m2 = Vec::<KlRes>::with_capacity(corpus_stats.len());
+    let mut results_m3 = Vec::<KlRes>::with_capacity(corpus_stats.len());
     for c in corpus_stats {
         let r = target.compute_kl(c);
-        results_m2.push((c.arch.clone(), r.0));
-        results_m3.push((c.arch.clone(), r.1));
+        results_m2.push(KlRes{ arch: c.arch.clone(), div: r.0});
+        results_m3.push(KlRes{ arch: c.arch.clone(), div: r.1});
     }
-    results_m2.sort_unstable_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    results_m2.sort_unstable_by(|a, b| a.div.partial_cmp(&b.div).unwrap());
     debug!("Results 2-gram: {:?}", results_m2);
-    results_m3.sort_unstable_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    results_m3.sort_unstable_by(|a, b| a.div.partial_cmp(&b.div).unwrap());
     debug!("Results 3-gram: {:?}", results_m3);
     Ok(determine(&results_m2, &results_m3))
 }
@@ -71,10 +78,10 @@ fn main() -> Result<()> {
         log::Level::Warn
     };
     simple_logger::init_with_level(level)?;
+
     let corpus_dir: String = args.get_one::<String>("corpus").unwrap().to_owned() + "/*.corpus";
     info!("Loading corpus from {}", corpus_dir);
     let corpus_stats = load_corpus(&corpus_dir)?;
-
     info!("Corpus size: {}", corpus_stats.len());
 
     for file in args.get_many::<String>("files").unwrap() {
