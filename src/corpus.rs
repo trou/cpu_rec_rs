@@ -12,10 +12,10 @@ use std::string::String;
 #[derive(Debug)]
 pub struct CorpusStats {
     pub arch: String,
-    bigrams_freq: HashMap<(u8, u8), f64>,
-    trigrams_freq: HashMap<(u8, u8, u8), f64>,
-    bg_base_freq: f64,
-    tg_base_freq: f64,
+    bigrams_freq: HashMap<(u8, u8), f32>,
+    trigrams_freq: HashMap<(u8, u8, u8), f32>,
+    bg_base_freq: f32,
+    tg_base_freq: f32,
 }
 
 pub fn load_corpus(path: &str) -> Result<Vec<CorpusStats>, Error> {
@@ -45,9 +45,10 @@ pub fn load_file(file: &Path, data: &mut Vec<u8>) -> Result<(), Error> {
         .with_context(|| "Could not read file")?;
     Ok(())
 }
+
 impl CorpusStats {
-    pub fn new(arch: String, data: &Vec<u8>, base_count: f64) -> Self {
-        let mut bg: HashMap<(u8, u8), f64> = HashMap::new();
+    pub fn new(arch: String, data: &Vec<u8>, base_count: f32) -> Self {
+        let mut bg: HashMap<(u8, u8), f32> = HashMap::new();
         let mut tg = HashMap::new();
 
         /*
@@ -72,11 +73,11 @@ impl CorpusStats {
             bg.len(),
             tg.len()
         );
-        let bi_qtotal: f64 =
-            (base_count * ((u32::pow(256, 2) - bg.len() as u32) as f64)) + bg.values().sum::<f64>();
+        let bi_qtotal: f32 =
+            (base_count * ((u32::pow(256, 2) - bg.len() as u32) as f32)) + bg.values().sum::<f32>();
         debug!("{} bigrams Qtotal: {}", arch, bi_qtotal);
-        let tri_qtotal: f64 =
-            (base_count * ((u32::pow(256, 3) - tg.len() as u32) as f64)) + tg.values().sum::<f64>();
+        let tri_qtotal: f32 =
+            (base_count * ((u32::pow(256, 3) - tg.len() as u32) as f32)) + tg.values().sum::<f32>();
         debug!("{} trigrams Qtotal: {}", arch, tri_qtotal);
 
         // Update counts to frequencies
@@ -91,7 +92,7 @@ impl CorpusStats {
         }
     }
 
-    pub fn compute_kl(&self, q: &Self) -> (f64, f64) {
+    pub fn compute_kl(&self, q: &Self) -> (f32, f32) {
         let mut kld_bg = 0.0;
         for (bg, f) in &self.bigrams_freq {
             if *f != 0.0 {

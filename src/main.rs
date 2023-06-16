@@ -34,7 +34,7 @@ fn determine(r2: &[KlRes], r3: &[KlRes]) -> Option<String> {
 #[derive(Debug)]
 struct KlRes {
     arch : String,
-    div : f64
+    div : f32
 }
 
 fn predict(corpus_stats: &Vec<CorpusStats>, target: &CorpusStats) -> Result<Option<String>, Error> {
