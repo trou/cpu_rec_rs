@@ -1,10 +1,18 @@
 mod corpus;
-use crate::corpus::{load_corpus, load_file, CorpusStats};
-use anyhow::{Error, Result};
+use crate::corpus::{load_corpus, CorpusStats};
+use anyhow::{Context, Error, Result};
 use clap::{arg, Arg, ArgAction};
 use log::{debug, info};
+use std::cmp::min;
 use std::str::FromStr;
 use std::string::String;
+
+#[derive(Clone)]
+struct DetectionResult {
+    file: String,
+    arch: String,
+    range: String,
+}
 
 fn determine(r2: &[KlRes], r3: &[KlRes]) -> Option<String> {
     /* Bigrams and trigrams disagree or "special" invalid arch => no result */
@@ -13,10 +21,11 @@ fn determine(r2: &[KlRes], r3: &[KlRes]) -> Option<String> {
     }
     let res = &r2[0].arch;
     /* Special heuristics */
-    if (res == "Ocaml" && r2[0].div > 1.0) || (res == "IA-64" && r2[0].div > 3.0) {
+    if (res == "OCaml" && r2[0].div > 1.0) || (res == "IA-64" && r2[0].div > 3.0) {
+        debug!("OCaml or IA-64, probably a false positive");
         return None;
     }
-    return Some(r2[0].arch.clone());
+    return Some(res.clone());
     /* TODO:
     elif res == 'PIC24':
             # PIC24 code has a 24-bit instruction set. In our corpus it is encoded in 32-bit words,
@@ -30,11 +39,10 @@ fn determine(r2: &[KlRes], r3: &[KlRes]) -> Option<String> {
      */
 }
 
-
 #[derive(Debug)]
 struct KlRes {
-    arch : String,
-    div : f32
+    arch: String,
+    div: f64,
 }
 
 fn predict(corpus_stats: &Vec<CorpusStats>, target: &CorpusStats) -> Result<Option<String>, Error> {
@@ -42,14 +50,100 @@ fn predict(corpus_stats: &Vec<CorpusStats>, target: &CorpusStats) -> Result<Opti
     let mut results_m3 = Vec::<KlRes>::with_capacity(corpus_stats.len());
     for c in corpus_stats {
         let r = target.compute_kl(c);
-        results_m2.push(KlRes{ arch: c.arch.clone(), div: r.0});
-        results_m3.push(KlRes{ arch: c.arch.clone(), div: r.1});
+        results_m2.push(KlRes {
+            arch: c.arch.clone(),
+            div: r.0,
+        });
+        results_m3.push(KlRes {
+            arch: c.arch.clone(),
+            div: r.1,
+        });
     }
     results_m2.sort_unstable_by(|a, b| a.div.partial_cmp(&b.div).unwrap());
-    debug!("Results 2-gram: {:?}", results_m2);
+    debug!("Results 2-gram: {:?}", &results_m2[0..2]);
     results_m3.sort_unstable_by(|a, b| a.div.partial_cmp(&b.div).unwrap());
-    debug!("Results 3-gram: {:?}", results_m3);
-    Ok(determine(&results_m2, &results_m3))
+    debug!("Results 3-gram: {:?}", &results_m3[0..2]);
+    let res = determine(&results_m2, &results_m3);
+    debug!("Result: {:?}", res);
+    Ok(res)
+}
+
+fn guess_with_windows(
+    corpus_stats: &Vec<CorpusStats>,
+    file_data: &Vec<u8>,
+    filename: &str,
+) -> Result<Vec<DetectionResult>, Error> {
+    let target = CorpusStats::new(String::from_str("target")?, &file_data, 0.0);
+    let mut res = Vec::<DetectionResult>::new();
+    let res_full = predict(&corpus_stats, &target)?;
+    match res_full {
+        Some(r) => res.push(DetectionResult {
+            arch: r,
+            file: filename.to_string(),
+            range: "Full".to_string(),
+        }),
+        _ => (),
+    };
+    let mut window = match file_data.len() {
+        0x8001..=0x20000 => 0x400,
+        0x1001..=0x8000 => 0x200,
+        0x401..=0x1000 => 0x100,
+        0..=0x400 => 0x40,
+        _ => 0x800,
+    };
+    let mut ok = false;
+    while window >= 0x40 && !ok {
+        struct Guess {
+            arch: Option<String>,
+            range: [usize; 2],
+        }
+        let mut cur_guess: Guess = Guess {
+            arch: None,
+            range: [0, 0],
+        };
+        info!("{}: window_size : 0x{:x} ", filename, window);
+        for start in (0..file_data.len()).step_by(window) {
+            let end = min(file_data.len(), start + window * 2);
+            debug!("{}: 0x{:x}-0x{:x}", filename, start, end);
+            let win_stats =
+                CorpusStats::new("target".to_string(), &file_data[start..end].to_vec(), 0.0);
+            let win_res = predict(corpus_stats, &win_stats)?;
+            let do_push = match &win_res {
+                Some(wres) => {
+                    if cur_guess.arch.as_ref().is_some_and(|a| a == wres) {
+                        false
+                    } else {
+                        true
+                    }
+                }
+                _ => true,
+            };
+            if do_push {
+                if !cur_guess.arch.is_none()
+                    && (cur_guess.range[1] - cur_guess.range[0]) > window * 2
+                {
+                    res.push(DetectionResult {
+                        file: filename.to_string(),
+                        arch: cur_guess.arch.unwrap(),
+                        range: format!("0x{:x}-0x{:x}", cur_guess.range[0], cur_guess.range[1]),
+                    });
+                }
+                cur_guess.arch = win_res;
+                cur_guess.range[0] = start;
+                cur_guess.range[1] = end;
+            } else {
+                cur_guess.range[1] = end;
+            }
+        }
+
+        if res.is_empty() {
+            window /= 2;
+        } else {
+            ok = true;
+        }
+    }
+
+    Ok(res)
 }
 
 fn main() -> Result<()> {
@@ -83,17 +177,23 @@ fn main() -> Result<()> {
     info!("Loading corpus from {}", corpus_dir);
     let corpus_stats = load_corpus(&corpus_dir)?;
     info!("Corpus size: {}", corpus_stats.len());
+    let mut out = std::io::stdout();
+    let mut tablestream = tablestream::Stream::new(
+        &mut out,
+        vec![
+            tablestream::col!(DetectionResult: .file).header("File"),
+            tablestream::col!(DetectionResult: .range).header("Range"),
+            tablestream::col!(DetectionResult: .arch).header("Detected Architecture"),
+        ],
+    );
 
     for file in args.get_many::<String>("files").unwrap() {
-        print!("{} ", file);
-        let mut file_data = Vec::<u8>::new();
-        load_file(std::path::Path::new(file), &mut file_data)?;
+        let file_data = std::fs::read(file).with_context(|| format!("Could not open {}", file))?;
 
-        let target = CorpusStats::new(String::from_str("target")?, &file_data, 0.0);
-        println!(
-            "{}",
-            predict(&corpus_stats, &target)?.unwrap_or_else(|| "Unknown".to_string())
-        );
+        for g in guess_with_windows(&corpus_stats, &file_data, file)? {
+            tablestream.row(g)?;
+        } 
     }
+    tablestream.finish()?;
     Ok(())
 }
