@@ -14,14 +14,15 @@ struct DetectionResult {
     range: String,
 }
 
-fn determine(r2: &[KlRes], r3: &[KlRes]) -> Option<String> {
+// Apply final heuristics to guess the arch
+fn determine(r2: &KlRes, r3: &KlRes) -> Option<String> {
     /* Bigrams and trigrams disagree or "special" invalid arch => no result */
-    if (r2[0].arch != r3[0].arch) || r2[0].arch.starts_with('_') {
+    if (r2.arch != r3.arch) || r2.arch.starts_with('_') {
         return None;
     }
-    let res = &r2[0].arch;
+    let res = &r2.arch;
     /* Special heuristics */
-    if (res == "OCaml" && r2[0].div > 1.0) || (res == "IA-64" && r2[0].div > 3.0) {
+    if (res == "OCaml" && r2.div > 1.0) || (res == "IA-64" && r2.div > 3.0) {
         debug!("OCaml or IA-64, probably a false positive");
         return None;
     }
@@ -42,33 +43,39 @@ fn determine(r2: &[KlRes], r3: &[KlRes]) -> Option<String> {
 #[derive(Debug)]
 struct KlRes {
     arch: String,
-    div: f64,
+    div: f32,
 }
 
 fn predict(corpus_stats: &Vec<CorpusStats>, target: &CorpusStats) -> Result<Option<String>, Error> {
     let mut results_m2 = Vec::<KlRes>::with_capacity(corpus_stats.len());
     let mut results_m3 = Vec::<KlRes>::with_capacity(corpus_stats.len());
+
+    // Build a vec of results for bigrams and trigrams, for easier processing
     for c in corpus_stats {
         let r = target.compute_kl(c);
         results_m2.push(KlRes {
             arch: c.arch.clone(),
-            div: r.0,
+            div: r.bigrams,
         });
         results_m3.push(KlRes {
             arch: c.arch.clone(),
-            div: r.1,
+            div: r.trigrams,
         });
     }
+
+    // Sort
     results_m2.sort_unstable_by(|a, b| a.div.partial_cmp(&b.div).unwrap());
     debug!("Results 2-gram: {:?}", &results_m2[0..2]);
     results_m3.sort_unstable_by(|a, b| a.div.partial_cmp(&b.div).unwrap());
     debug!("Results 3-gram: {:?}", &results_m3[0..2]);
-    let res = determine(&results_m2, &results_m3);
+
+    // Guess
+    let res = determine(&results_m2[0], &results_m3[0]);
     debug!("Result: {:?}", res);
     Ok(res)
 }
 
-/* Tries to guess the architecture of `file_data`:
+/* Try to guess the architecture of `file_data`:
     * first by analyzing the whole buffer
     * then by applying a sliding window and analyzing it, making it smaller and smaller until a result is found
   The function returns a vec containing the results
