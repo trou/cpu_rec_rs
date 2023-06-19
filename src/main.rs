@@ -25,7 +25,7 @@ fn determine(r2: &[KlRes], r3: &[KlRes]) -> Option<String> {
         debug!("OCaml or IA-64, probably a false positive");
         return None;
     }
-    return Some(res.clone());
+    Some(res.clone())
     /* TODO:
     elif res == 'PIC24':
             # PIC24 code has a 24-bit instruction set. In our corpus it is encoded in 32-bit words,
@@ -68,58 +68,77 @@ fn predict(corpus_stats: &Vec<CorpusStats>, target: &CorpusStats) -> Result<Opti
     Ok(res)
 }
 
+/* Tries to guess the architecture of `file_data`:
+    * first by analyzing the whole buffer
+    * then by applying a sliding window and analyzing it, making it smaller and smaller until a result is found
+  The function returns a vec containing the results
+*/
 fn guess_with_windows(
     corpus_stats: &Vec<CorpusStats>,
     file_data: &Vec<u8>,
     filename: &str,
 ) -> Result<Vec<DetectionResult>, Error> {
-    let target = CorpusStats::new(String::from_str("target")?, &file_data, 0.0);
     let mut res = Vec::<DetectionResult>::new();
-    let res_full = predict(&corpus_stats, &target)?;
-    match res_full {
-        Some(r) => res.push(DetectionResult {
+
+    let target = CorpusStats::new(String::from_str("target")?, file_data, 0.0);
+    let res_full = predict(corpus_stats, &target)?;
+
+    // If the whole file data gives a result, return it
+    if let Some(r) = res_full {
+        res.push(DetectionResult {
             arch: r,
             file: filename.to_string(),
-            range: "Full".to_string(),
-        }),
-        _ => (),
-    };
+            range: "Whole file".to_string(),
+        });
+        return Ok(res);
+    }
+
+    // Heuristic depending on file size, the number is actually half the window
+    // size
     let mut window = match file_data.len() {
+        0x20001..=0x100000 => 0x800,
         0x8001..=0x20000 => 0x400,
         0x1001..=0x8000 => 0x200,
         0x401..=0x1000 => 0x100,
         0..=0x400 => 0x40,
-        _ => 0x800,
+        _ => (file_data.len() / 100) & 0xFFFFF000,
     };
+
     let mut ok = false;
     while window >= 0x40 && !ok {
+        /*
+            Store the current guess, in order to update the range while the arch is
+            the same over the consecutive windows
+        */
         struct Guess {
             arch: Option<String>,
             range: [usize; 2],
         }
+
         let mut cur_guess: Guess = Guess {
             arch: None,
             range: [0, 0],
         };
-        info!("{}: window_size : 0x{:x} ", filename, window);
+
+        info!("{}: window_size : 0x{:x} ", filename, window * 2);
         for start in (0..file_data.len()).step_by(window) {
             let end = min(file_data.len(), start + window * 2);
-            debug!("{}: 0x{:x}-0x{:x}", filename, start, end);
+
+            debug!("{}: range 0x{:x}-0x{:x}", filename, start, end);
             let win_stats =
                 CorpusStats::new("target".to_string(), &file_data[start..end].to_vec(), 0.0);
             let win_res = predict(corpus_stats, &win_stats)?;
+
+            // Should we add the previous guess to the result ?  yes if it's
+            // either unknown (None) or different from the new one
             let do_push = match &win_res {
-                Some(wres) => {
-                    if cur_guess.arch.as_ref().is_some_and(|a| a == wres) {
-                        false
-                    } else {
-                        true
-                    }
-                }
+                Some(wres) => !cur_guess.arch.as_ref().is_some_and(|a| a == wres),
                 _ => true,
             };
             if do_push {
-                if !cur_guess.arch.is_none()
+                // push the detected arch to the results if it's known and
+                // covers more than one window
+                if cur_guess.arch.is_some()
                     && (cur_guess.range[1] - cur_guess.range[0]) > window * 2
                 {
                     res.push(DetectionResult {
@@ -128,14 +147,17 @@ fn guess_with_windows(
                         range: format!("0x{:x}-0x{:x}", cur_guess.range[0], cur_guess.range[1]),
                     });
                 }
+                // Update the current guess
                 cur_guess.arch = win_res;
                 cur_guess.range[0] = start;
                 cur_guess.range[1] = end;
             } else {
+                // Same arch: update the end of the range
                 cur_guess.range[1] = end;
             }
         }
 
+        // No result: try a smaller window, else return
         if res.is_empty() {
             window /= 2;
         } else {
@@ -174,9 +196,13 @@ fn main() -> Result<()> {
     simple_logger::init_with_level(level)?;
 
     let corpus_dir: String = args.get_one::<String>("corpus").unwrap().to_owned() + "/*.corpus";
-    info!("Loading corpus from {}", corpus_dir);
+    println!("Loading corpus from {}", corpus_dir);
+
     let corpus_stats = load_corpus(&corpus_dir)?;
+
     info!("Corpus size: {}", corpus_stats.len());
+
+    // Prepare output stream
     let mut out = std::io::stdout();
     let mut tablestream = tablestream::Stream::new(
         &mut out,
@@ -192,7 +218,7 @@ fn main() -> Result<()> {
 
         for g in guess_with_windows(&corpus_stats, &file_data, file)? {
             tablestream.row(g)?;
-        } 
+        }
     }
     tablestream.finish()?;
     Ok(())
