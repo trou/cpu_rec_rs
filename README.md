@@ -32,7 +32,7 @@ sliding windows. Common false positives include:
 ### About
 
 `cpu_rec_rs` is a Rust reimplementation of the original
-[`cpu_res`](https://github.com/airbus-seclab/cpu_rec/). Why reimplement it?
+[`cpu_rec`](https://github.com/airbus-seclab/cpu_rec/). Why reimplement it?
 
 * Performance
 * Code simplification
