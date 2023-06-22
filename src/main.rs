@@ -22,8 +22,8 @@ fn determine(r2: &KlRes, r3: &KlRes) -> Option<String> {
     }
     let res = &r2.arch;
     /* Special heuristics */
-    if (res == "OCaml" && r2.div > 1.0) || (res == "IA-64" && r2.div > 3.0) {
-        debug!("OCaml or IA-64, probably a false positive");
+    if (res == "OCaml" && r2.div > 1.0) || (res == "xmox_xs2a" && r2.div > 3.0) || (res == "IA-64" && r2.div > 3.0) {
+        debug!("{}, probably a false positive", res);
         return None;
     }
     Some(res.clone())
@@ -106,8 +106,7 @@ fn guess_with_windows(
         0x20001..=0x100000 => 0x800,
         0x8001..=0x20000 => 0x400,
         0x1001..=0x8000 => 0x200,
-        0x401..=0x1000 => 0x100,
-        0..=0x400 => 0x40,
+        0..=0x1000 => 0x100,
         _ => (file_data.len() / 100) & 0xFFFFF000,
     };
 
