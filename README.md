@@ -3,7 +3,7 @@
 Determine which CPU architecture is used in a binary file.
 Example:
 
-```shell
+```
 $ cpu_rec_rs /bin/bash /usr/lib/firmware/rtlwifi/rtl8821aefw*
 Loading corpus from cpu_rec_corpus/*.corpus
 ----------------------------------------------------------------------------------------
