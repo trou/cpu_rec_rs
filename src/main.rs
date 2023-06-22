@@ -230,3 +230,28 @@ fn main() -> Result<()> {
     tablestream.finish()?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use corpus::*;
+    use rand::{RngCore, SeedableRng};
+    use assert_approx_eq::assert_approx_eq;
+
+    #[test]
+    fn check_stats() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(2);
+        let mut rand_data: [u8; 1000] = [1; 1000];
+        rng.fill_bytes(&mut rand_data);
+
+        let mut rand_target: [u8; 1000] = [1; 1000];
+        rng.fill_bytes(&mut rand_target);
+
+        let rand_stats = CorpusStats::new("rand".to_string(), &rand_data.to_vec(), 0.01);
+        let target_stats = CorpusStats::new("rand".to_string(), &rand_data.to_vec(), 0.0);
+
+        let res = target_stats.compute_kl(&rand_stats);
+        assert_approx_eq!(res.bigrams, 0.49450362);
+        assert_approx_eq!(res.trigrams, 5.120544);
+    }
+}
