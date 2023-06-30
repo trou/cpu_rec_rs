@@ -227,8 +227,11 @@ fn main() -> Result<()> {
         // serialized bytes embedded from build.rs
         let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/default.pc"));
 
+        // decompress
+        let bytes = lz4_flex::decompress(bytes, 39364573).unwrap();
+
         // deserialize
-        postcard::from_bytes(bytes).unwrap()
+        postcard::from_bytes(&bytes).unwrap()
     };
 
     let corpus_stats = match args.get_one::<&str>("corpus") {
