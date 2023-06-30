@@ -10,9 +10,18 @@ anyhow = "1.0.71"
 clap = "4.3.3"
 glob = "0.3.1"
 log = "0.4.19"
+postcard = { version = "1.0.4", features = ["use-std"], default-features = false }
+serde = { version = "1.0.164", features = ["derive"] }
 simple_logger = "4.1.0"
 tablestream = "0.1.3"
 
 [dev-dependencies]
 assert_approx_eq = "1.1.0"
 rand = "0.8.5"
+
+[build-dependencies]
+anyhow = "1.0.71"
+glob = "0.3.1"
+log = "0.4.19"
+postcard = { version = "1.0.4", features = ["use-std"], default-features = false }
+serde = { version = "1.0.164", features = ["derive"] }

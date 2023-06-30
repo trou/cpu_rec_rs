@@ -202,7 +202,7 @@ fn main() -> Result<()> {
         .propagate_version(true)
         .author("Raphaël Rigo <devel@syscall.eu>")
         .about("Identifies CPU architectures in binaries")
-        .arg(arg!(--corpus <corpus_dir>).default_value("cpu_rec_corpus"))
+        .arg(arg!(--corpus <corpus_dir>))
         .arg(arg!(-d - -debug))
         .arg(arg!(-v - -verbose))
         .arg(
@@ -223,17 +223,30 @@ fn main() -> Result<()> {
     };
     simple_logger::init_with_level(level)?;
 
-    let corpus_dir = args.get_one::<String>("corpus").unwrap().to_owned();
-    if !Path::new(&corpus_dir).is_dir() {
-        return Err(Error::msg(format!(
-            "{} is not a valid directory",
-            corpus_dir
-        )));
-    }
-    let corpus_files: String = args.get_one::<String>("corpus").unwrap().to_owned() + "/*.corpus";
-    println!("Loading corpus from {}", corpus_files);
+    let default_corpus: Vec<CorpusStats> = {
+        // serialized bytes embedded from build.rs
+        let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/default.pc"));
 
-    let corpus_stats = load_corpus(&corpus_files)?;
+        // deserialize
+        postcard::from_bytes(bytes).unwrap()
+    };
+
+    let corpus_stats = match args.get_one::<&str>("corpus") {
+        // if no arg given, use embedded corpus
+        None => default_corpus,
+        // attempt to load the given corpus folder
+        Some(corpus_dir) => {
+            if !Path::new(corpus_dir).is_dir() {
+                return Err(Error::msg(format!(
+                    "{} is not a valid directory",
+                    corpus_dir
+                )));
+            }
+            let corpus_files = format!("{corpus_dir}/*.corpus");
+            println!("Loading corpus from {}", corpus_files);
+            load_corpus(&corpus_files)?
+        }
+    };
 
     info!("Corpus size: {}", corpus_stats.len());
 
