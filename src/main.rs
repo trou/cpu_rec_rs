@@ -19,6 +19,7 @@ use anyhow::{Context, Error, Result};
 use clap::{arg, Arg, ArgAction};
 use log::{debug, info};
 use std::cmp::min;
+use std::path::Path;
 use std::str::FromStr;
 use std::string::String;
 
@@ -219,10 +220,14 @@ fn main() -> Result<()> {
     };
     simple_logger::init_with_level(level)?;
 
-    let corpus_dir: String = args.get_one::<String>("corpus").unwrap().to_owned() + "/*.corpus";
-    println!("Loading corpus from {}", corpus_dir);
+    let corpus_dir = args.get_one::<String>("corpus").unwrap().to_owned();
+    if !Path::new(&corpus_dir).is_dir() {
+        return Err(Error::msg(format!("{} is not a valid directory", corpus_dir)));
+    }
+    let corpus_files: String = args.get_one::<String>("corpus").unwrap().to_owned() + "/*.corpus";
+    println!("Loading corpus from {}", corpus_files);
 
-    let corpus_stats = load_corpus(&corpus_dir)?;
+    let corpus_stats = load_corpus(&corpus_files)?;
 
     info!("Corpus size: {}", corpus_stats.len());
 
