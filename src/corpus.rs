@@ -16,12 +16,13 @@
 use anyhow::{Context, Error, Ok, Result};
 use glob::glob;
 use log::debug;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::str::FromStr;
 use std::string::String;
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct CorpusStats {
     pub arch: String,
     bigrams_freq: HashMap<(u8, u8), f32>,
