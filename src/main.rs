@@ -157,7 +157,10 @@ fn guess_with_windows(
             // Should we add the previous guess to the result ?  yes if it's
             // either unknown (None) or different from the new one
             let do_push = match &win_res {
-                Some(wres) => !cur_guess.arch.as_ref().is_some_and(|a| a == wres),
+                Some(wres) => match cur_guess.arch.as_ref() {
+                    Some(a) => a != wres,
+                    None => true,
+                },
                 _ => true,
             };
             if do_push {
@@ -222,7 +225,10 @@ fn main() -> Result<()> {
 
     let corpus_dir = args.get_one::<String>("corpus").unwrap().to_owned();
     if !Path::new(&corpus_dir).is_dir() {
-        return Err(Error::msg(format!("{} is not a valid directory", corpus_dir)));
+        return Err(Error::msg(format!(
+            "{} is not a valid directory",
+            corpus_dir
+        )));
     }
     let corpus_files: String = args.get_one::<String>("corpus").unwrap().to_owned() + "/*.corpus";
     println!("Loading corpus from {}", corpus_files);

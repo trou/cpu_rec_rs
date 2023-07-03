@@ -50,11 +50,12 @@ pub fn load_corpus(path: &str) -> Result<Vec<CorpusStats>, Error> {
             Ok(CorpusStats::new(arch_name, &data, 0.01))
         })
         .collect();
-    if res.as_ref().is_ok_and(|res_v| res_v.len() == 0) {
-        Err(Error::msg("Could not find any file in corpus directory"))
-    } else {
-        res
+    if let Result::Ok(res_v) = &res {
+        if res_v.is_empty() {
+            return Err(Error::msg("Could not find any file in corpus directory"));
+        }
     }
+    res
 }
 
 // Convenience struct for readability
