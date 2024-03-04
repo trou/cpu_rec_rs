@@ -15,7 +15,7 @@
 */
 mod corpus;
 use crate::corpus::{load_corpus, CorpusStats};
-use anyhow::{Context, Error, Result};
+use anyhow::{bail, Context, Error, Result};
 use clap::{arg, Arg, ArgAction};
 use log::{debug, info};
 use std::cmp::min;
@@ -202,7 +202,7 @@ fn main() -> Result<()> {
         .propagate_version(true)
         .author("Raphaël Rigo <devel@syscall.eu>")
         .about("Identifies CPU architectures in binaries")
-        .arg(arg!(--corpus <corpus_dir>).default_value("cpu_rec_corpus"))
+        .arg(arg!(--corpus <corpus_dir>))
         .arg(arg!(-d - -debug))
         .arg(arg!(-v - -verbose))
         .arg(
@@ -223,17 +223,40 @@ fn main() -> Result<()> {
     };
     simple_logger::init_with_level(level)?;
 
-    let corpus_dir = args.get_one::<String>("corpus").unwrap().to_owned();
-    if !Path::new(&corpus_dir).is_dir() {
-        return Err(Error::msg(format!(
-            "{} is not a valid directory",
-            corpus_dir
-        )));
-    }
-    let corpus_files: String = args.get_one::<String>("corpus").unwrap().to_owned() + "/*.corpus";
-    println!("Loading corpus from {}", corpus_files);
+    let corpus_dir_res = args.get_one::<String>("corpus");
 
-    let corpus_stats = load_corpus(&corpus_files)?;
+    /* Use the given path to load the corpus from, else try
+     * to find it in the current directory or in the exec
+     * folder */
+    let corpus_dir = match corpus_dir_res {
+        Some(c) => c.to_owned(),
+        None => if Path::new("cpu_rec_corpus").is_dir() {
+            "cpu_rec_corpus".to_string()
+        } else {
+            let exe_path = std::env::current_exe().with_context(|| "Could not get exe filename")?;
+            let parent_path = exe_path.parent().unwrap();
+            if parent_path.join("cpu_rec_corpus").is_dir() {
+                // Found it in the exe path
+                parent_path
+                    .join("cpu_rec_corpus")
+                    .to_str()
+                    .unwrap()
+                    .to_string()
+            } else {
+                bail!("Could not find \"cpu_rec_corpus\", please specify it using --corpus");
+            }
+        }
+        .to_owned(),
+    };
+
+    if !Path::new(&corpus_dir).is_dir() {
+        bail!("{} is not a valid directory", corpus_dir);
+    }
+
+    let corpus_files = Path::new(&corpus_dir).join("*.corpus");
+    println!("Loading corpus from {:?}", corpus_files);
+
+    let corpus_stats = load_corpus(&corpus_files.to_str().unwrap())?;
 
     info!("Corpus size: {}", corpus_stats.len());
 
