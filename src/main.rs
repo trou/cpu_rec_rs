@@ -225,38 +225,26 @@ fn main() -> Result<()> {
 
     let corpus_dir_res = args.get_one::<String>("corpus");
 
-    /* Use the given path to load the corpus from, else try
-     * to find it in the current directory or in the exec
-     * folder */
-    let corpus_dir = match corpus_dir_res {
-        Some(c) => c.to_owned(),
-        None => if Path::new("cpu_rec_corpus").is_dir() {
-            "cpu_rec_corpus".to_string()
-        } else {
-            let exe_path = std::env::current_exe().with_context(|| "Could not get exe filename")?;
-            let parent_path = exe_path.parent().unwrap();
-            if parent_path.join("cpu_rec_corpus").is_dir() {
-                // Found it in the exe path
-                parent_path
-                    .join("cpu_rec_corpus")
-                    .to_str()
-                    .unwrap()
-                    .to_string()
-            } else {
-                bail!("Could not find \"cpu_rec_corpus\", please specify it using --corpus");
+    // Use the given path to load the corpus from, else use the embedded corpus
+    let corpus_stats = match corpus_dir_res {
+        Some(c) => {
+            if !Path::new(&c).is_dir() {
+                bail!("{c} is not a valid directory");
             }
+
+            let corpus_files = Path::new(&c).join("*.corpus");
+            println!("Loading corpus from {:?}", corpus_files);
+
+            load_corpus(&corpus_files.to_str().unwrap())?
         }
-        .to_owned(),
+        None => {
+            println!("Loading embedded corpus");
+            // serialized bytes embedded from build.rs
+            let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/default.pc"));
+            // deserialize
+            postcard::from_bytes(bytes).unwrap()
+        }
     };
-
-    if !Path::new(&corpus_dir).is_dir() {
-        bail!("{} is not a valid directory", corpus_dir);
-    }
-
-    let corpus_files = Path::new(&corpus_dir).join("*.corpus");
-    println!("Loading corpus from {:?}", corpus_files);
-
-    let corpus_stats = load_corpus(&corpus_files.to_str().unwrap())?;
 
     info!("Corpus size: {}", corpus_stats.len());
 
