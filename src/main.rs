@@ -39,7 +39,7 @@ fn determine(r2: &KlRes, r3: &KlRes) -> Option<String> {
     let res = &r2.arch;
     /* Special heuristics */
     if (res == "OCaml" && r2.div > 1.0)
-        || (res == "xmox_xs2a" && r2.div > 3.0)
+        || (res == "xmos_xs2a" && r2.div > 3.0)
         || (res == "IA-64" && r2.div > 3.0)
     {
         debug!("{}, probably a false positive", res);
