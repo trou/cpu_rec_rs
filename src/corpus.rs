@@ -51,8 +51,11 @@ pub fn load_corpus(path: &str) -> Result<Vec<CorpusStats>, Error> {
         })
         .collect();
     if let Result::Ok(res_v) = &res {
-        if res_v.is_empty() {
-            return Err(Error::msg("Could not find any file in corpus directory"));
+        if res_v.len() < 2 {
+            return Err(Error::msg(format!(
+                "Found {} file(s) in corpus directory, at least 2 are required",
+                res_v.len()
+            )));
         }
     }
     res
@@ -111,6 +114,10 @@ impl CorpusStats {
             bg_base_freq: base_count / bi_qtotal,
             tg_base_freq: base_count / tri_qtotal,
         }
+    }
+
+    pub fn has_trigrams(&self) -> bool {
+        !self.trigrams_freq.is_empty()
     }
 
     // Compute the Kullback–Leibler divergence (cross entropy) of the

@@ -66,6 +66,11 @@ struct KlRes {
 }
 
 fn predict(corpus_stats: &Vec<CorpusStats>, target: &CorpusStats) -> Result<Option<String>, Error> {
+    // Not enough data: all divergences would be 0, giving an arbitrary result
+    if !target.has_trigrams() {
+        return Ok(None);
+    }
+
     let mut results_m2 = Vec::<KlRes>::with_capacity(corpus_stats.len());
     let mut results_m3 = Vec::<KlRes>::with_capacity(corpus_stats.len());
 
@@ -140,6 +145,20 @@ fn guess_with_windows(
             range: [usize; 2],
         }
 
+        // push the detected arch to the results if it's known and
+        // covers more than one window
+        let flush = |guess: &mut Guess, res: &mut Vec<DetectionResult>| {
+            if let Some(arch) = guess.arch.take() {
+                if (guess.range[1] - guess.range[0]) > window * 2 {
+                    res.push(DetectionResult {
+                        file: filename.to_string(),
+                        arch,
+                        range: format!("0x{:x}-0x{:x}", guess.range[0], guess.range[1]),
+                    });
+                }
+            }
+        };
+
         let mut cur_guess: Guess = Guess {
             arch: None,
             range: [0, 0],
@@ -148,6 +167,12 @@ fn guess_with_windows(
         info!("{}: window_size : 0x{:x} ", filename, window * 2);
         for start in (0..file_data.len()).step_by(window) {
             let end = min(file_data.len(), start + window * 2);
+            // Stop on windows smaller than half the window size: the tail is
+            // already covered by the previous window, and short windows give
+            // unreliable results
+            if end - start < window {
+                break;
+            }
 
             debug!("{}: range 0x{:x}-0x{:x}", filename, start, end);
             let win_stats =
@@ -164,17 +189,7 @@ fn guess_with_windows(
                 _ => true,
             };
             if do_push {
-                // push the detected arch to the results if it's known and
-                // covers more than one window
-                if cur_guess.arch.is_some()
-                    && (cur_guess.range[1] - cur_guess.range[0]) > window * 2
-                {
-                    res.push(DetectionResult {
-                        file: filename.to_string(),
-                        arch: cur_guess.arch.unwrap(),
-                        range: format!("0x{:x}-0x{:x}", cur_guess.range[0], cur_guess.range[1]),
-                    });
-                }
+                flush(&mut cur_guess, &mut res);
                 // Update the current guess
                 cur_guess.arch = win_res;
                 cur_guess.range[0] = start;
@@ -184,6 +199,8 @@ fn guess_with_windows(
                 cur_guess.range[1] = end;
             }
         }
+        // Don't forget the last guess
+        flush(&mut cur_guess, &mut res);
 
         // No result: try a smaller window, else return
         if res.is_empty() {
@@ -287,7 +304,7 @@ mod tests {
     use super::*;
     use assert_approx_eq::assert_approx_eq;
     use corpus::*;
-    use rand::{RngCore, SeedableRng};
+    use rand::{Rng, RngCore, SeedableRng};
 
     #[test]
     fn check_stats() {
@@ -304,5 +321,63 @@ mod tests {
         let res = target_stats.compute_kl(&rand_stats);
         assert_approx_eq!(res.bigrams, 0.49450362);
         assert_approx_eq!(res.trigrams, 5.120544);
+    }
+
+    // Random bytes in the [lo, hi) range
+    fn gen_data(rng: &mut rand::rngs::StdRng, len: usize, lo: u8, hi: u8) -> Vec<u8> {
+        (0..len).map(|_| rng.random_range(lo..hi)).collect()
+    }
+
+    // Synthetic corpus: "A" and "B" (restricted byte ranges), "_noise"
+    // (uniform, invalid arch). A valid arch comes first, as ties on tiny
+    // targets used to pick the first entry
+    fn synthetic_corpus(rng: &mut rand::rngs::StdRng) -> Vec<CorpusStats> {
+        vec![
+            CorpusStats::new("A".to_string(), &gen_data(rng, 0x10000, 0x00, 0x10), 0.01),
+            CorpusStats::new("B".to_string(), &gen_data(rng, 0x10000, 0x80, 0x90), 0.01),
+            CorpusStats::new("_noise".to_string(), &gen_data(rng, 0x40000, 0, 255), 0.01),
+        ]
+    }
+
+    #[test]
+    fn tiny_target_gives_no_result() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(3);
+        let corpus = synthetic_corpus(&mut rng);
+        for len in 0..3 {
+            let target = CorpusStats::new("target".to_string(), &vec![0x41; len], 0.0);
+            assert!(
+                predict(&corpus, &target).unwrap().is_none(),
+                "{} bytes target should give no result",
+                len
+            );
+        }
+    }
+
+    #[test]
+    fn arch_detected_at_start_and_end() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(4);
+        let corpus = synthetic_corpus(&mut rng);
+        let noise = gen_data(&mut rng, 0x10000, 0, 255);
+        let code_a = gen_data(&mut rng, 0x4000, 0x00, 0x10);
+
+        let a_last = [noise.clone(), code_a.clone()].concat();
+        let res = guess_with_windows(&corpus, &a_last, "a_last").unwrap();
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].arch, "A");
+        assert!(
+            res[0].range.ends_with(&format!("-0x{:x}", a_last.len())),
+            "range {} should end at end of file",
+            res[0].range
+        );
+
+        let a_first = [code_a, noise].concat();
+        let res = guess_with_windows(&corpus, &a_first, "a_first").unwrap();
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].arch, "A");
+        assert!(
+            res[0].range.starts_with("0x0-"),
+            "range {} should start at 0",
+            res[0].range
+        );
     }
 }
