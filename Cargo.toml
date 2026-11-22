@@ -1,10 +1,14 @@
 [package]
 name = "cpu_rec_rs"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 rust-version = "1.85"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[profile.release]
+overflow-checks = true
+lto = true          # Enable link-time optimization
+codegen-units = 1   # Reduce number of codegen units to increase optimizations
 
 [dependencies]
 anyhow = "1.0.71"
